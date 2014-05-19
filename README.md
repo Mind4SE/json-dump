@@ -1,4 +1,4 @@
 json-dump
 =========
 
-A plugin generating JSON allowing loading for visualization in web pages using d3js.
+A "@DumpJSON" annotation plugin providing JSON generation for visualization in web pages, using d3js.
