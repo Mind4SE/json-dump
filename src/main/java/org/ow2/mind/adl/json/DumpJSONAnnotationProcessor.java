@@ -22,17 +22,26 @@
 
 package org.ow2.mind.adl.json;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.Map;
 
 import org.objectweb.fractal.adl.ADLException;
 import org.objectweb.fractal.adl.Definition;
 import org.objectweb.fractal.adl.Node;
+import org.ow2.mind.NameHelper;
 import org.ow2.mind.adl.annotation.ADLLoaderPhase;
 import org.ow2.mind.adl.annotation.AbstractADLLoaderAnnotationProcessor;
 import org.ow2.mind.adl.ast.ASTHelper;
 import org.ow2.mind.adl.ast.Component;
 import org.ow2.mind.adl.ast.ComponentContainer;
 import org.ow2.mind.annotation.Annotation;
+import org.ow2.mind.compilation.CompilerContextHelper;
+import org.ow2.mind.io.OutputFileLocator;
+
+import com.google.inject.Inject;
 
 /**
  * Inspired by Matthieu Anne's DumpAST
@@ -41,7 +50,14 @@ public class DumpJSONAnnotationProcessor
 extends
 AbstractADLLoaderAnnotationProcessor {
 
-	private static void showComponents(final Definition definition,
+	@Inject
+	OutputFileLocator outputFileLocatorItf;
+	
+	protected File outFile;
+	protected PrintWriter printWriter;
+	protected static String extension = ".json";
+
+	private void showComponents(final Definition definition,
 			final int depth) {
 		String prf = "  ";
 
@@ -49,15 +65,15 @@ AbstractADLLoaderAnnotationProcessor {
 			prf = prf + "  ";
 
 		if (ASTHelper.isComposite(definition)) {
-			
+
 			// End line with ",\n"
-			System.out.println(",");
-			
+			printWriter.println(",");
+
 			final Component[] subComponents = ((ComponentContainer) definition)
 					.getComponents();
 
 			if (subComponents.length > 0)
-				System.out.println(prf + "\"children\": [");
+				printWriter.println(prf + "\"children\": [");
 
 			for (int i = 0; i < subComponents.length; i++) {
 				final Component subComponent = subComponents[i];
@@ -65,40 +81,40 @@ AbstractADLLoaderAnnotationProcessor {
 					Definition subComponentDef = ASTHelper.getResolvedDefinition(
 							subComponent.getDefinitionReference(), null, null);
 
-					System.out.print(prf + " {\n"
+					printWriter.print(prf + " {\n"
 							+ prf + prf + "\"name\": " + "\""	+ /*subComponentDef.getName()	+ " " + */ subComponent.getName() + "\"");
 
 					if (subComponentDef != null)
 						showComponents(subComponentDef, depth + 1);
 
 					// Line return and close the current child
-					System.out.println();
-					System.out.print(prf + " }");
+					printWriter.println();
+					printWriter.print(prf + " }");
 
 					// add "," to all entries except the last one
 					if (i < subComponents.length-1)
-						System.out.print(",");
+						printWriter.print(",");
 
 					// \n in any case
-					System.out.println();
-					
+					printWriter.println();
+
 				} catch (final ADLException e) {
 					e.printStackTrace();
 				}
 			}
 
 			if (subComponents.length > 0)
-				System.out.println(prf + "]");
+				printWriter.println(prf + "]");
 		}
 	}
 
-	public static void showDefinitionContent(final Definition definition) {
-		System.out.println("{");
-		System.out.print("  \"name\": " + "\"" + definition.getName() + "\"");
+	public void showDefinitionContent(final Definition definition) {
+		printWriter.println("{");
+		printWriter.print("  \"name\": " + "\"" + definition.getName() + "\"");
 
 		showComponents(definition, 0);
 
-		System.out.println("}");
+		printWriter.println("}");
 
 	}
 
@@ -113,8 +129,37 @@ AbstractADLLoaderAnnotationProcessor {
 	public Definition processAnnotation(final Annotation annotation,
 			final Node node, final Definition definition, final ADLLoaderPhase phase,
 			final Map<Object, Object> context) throws ADLException {
+		
 		assert annotation instanceof DumpJSON;
-		showDefinitionContent(definition);
+
+		String nameInOutput = null;
+		
+		// Specify an output name ?
+		String executableName = CompilerContextHelper.getExecutableName(context);
+		if (executableName != null)
+			nameInOutput = executableName;
+		else
+			nameInOutput = NameHelper.toValidName(definition.getName()).replace('.', '_');
+		
+		nameInOutput = "/" + nameInOutput + extension;
+		
+		// could also use getCSourceOutputFile
+		this.outFile = outputFileLocatorItf.getMetadataOutputFile(nameInOutput, context);
+
+		try {
+			printWriter = new PrintWriter( new FileWriter( this.outFile.getAbsolutePath() ) );
+			showDefinitionContent(definition);
+			printWriter.close();
+		} catch (IOException e) {
+			/* 
+			 * "if the named file exists but is a directory rather than a regular file, does not exist but cannot be created,
+			 * or cannot be opened for any other reason"
+			 * */
+			logger.warning("Could not generate JSON for definition '" + definition.getName() + "' !");
+			logger.warning("Error was: " + e.getMessage());
+		}
+
+
 		return null;
 	}
 
